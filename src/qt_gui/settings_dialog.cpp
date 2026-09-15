@@ -1,7 +1,10 @@
 // SPDX-FileCopyrightText: Copyright 2025-2026 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include <charconv>
 #include <iostream>
+#include <optional>
+#include <string_view>
 #include <vector>
 #include <AL/al.h>
 #include <AL/alc.h>
@@ -154,11 +157,6 @@ SettingsDialog::SettingsDialog(std::shared_ptr<gui_settings> gui_settings,
         // Frontend tab
         ui->tabWidgetSettings->setTabVisible(1, false);
         ui->chooseHomeTabComboBox->removeItem(1);
-
-    } else {
-        // Experimental tab
-        ui->tabWidgetSettings->setTabVisible(8, false);
-        ui->chooseHomeTabComboBox->removeItem(8);
     }
 
     // to do: unhide when implemented
@@ -185,7 +183,7 @@ SettingsDialog::SettingsDialog(std::shared_ptr<gui_settings> gui_settings,
                         {tr("Paths"), "Paths"},
                         {tr("Log"), "Log"},
                         {tr("Debug"), "Debug"},
-                        {tr("Experimental"), "Experimental"}};
+                        {tr("Network"), "Experimental"}};
     micMap = {{tr("None"), "None"}, {tr("Default Device"), "Default Device"}};
     audioBackendMap = {{0, "SDL"}, {1, "OpenAL"}};
 
@@ -259,11 +257,17 @@ SettingsDialog::SettingsDialog(std::shared_ptr<gui_settings> gui_settings,
 
     connect(ui->buttonBox, &QDialogButtonBox::clicked, this, [this](QAbstractButton* button) {
         if (button == ui->buttonBox->button(QDialogButtonBox::Save)) {
+            if (!ValidateNetworkSettings()) {
+                return;
+            }
             is_game_saving = true;
             UpdateSettings(is_game_specific);
             SaveSettings();
             QWidget::close();
         } else if (button == ui->buttonBox->button(QDialogButtonBox::Apply)) {
+            if (!ValidateNetworkSettings()) {
+                return;
+            }
             UpdateSettings(is_game_specific);
             SaveSettings();
         } else if (button == ui->buttonBox->button(QDialogButtonBox::RestoreDefaults)) {
@@ -611,6 +615,13 @@ SettingsDialog::SettingsDialog(std::shared_ptr<gui_settings> gui_settings,
         ui->shaderCaheCheckBox->installEventFilter(this);
         ui->shaderCacheArchiveCheckBox->installEventFilter(this);
         ui->shadnetCheckBox->installEventFilter(this);
+        ui->shadnetGroupBox->installEventFilter(this);
+        ui->serverLineEdit->installEventFilter(this);
+        ui->servWebApiLineEdit->installEventFilter(this);
+        ui->signalingInfoLineEdit->installEventFilter(this);
+        ui->upnpCheckBox->installEventFilter(this);
+        ui->networkInterfaceLineEdit->installEventFilter(this);
+        ui->broadcastPeersLineEdit->installEventFilter(this);
         ui->dmemGroupBox->installEventFilter(this);
     }
 
@@ -728,6 +739,10 @@ void SettingsDialog::LoadValuesFromConfig() {
         QString::fromStdString(EmulatorSettings.GetShadNetWebApiServer()));
     ui->signalingInfoLineEdit->setText(QString::fromStdString(EmulatorSettings.GetSignalingInfo()));
     ui->upnpCheckBox->setChecked(EmulatorSettings.IsUPnPEnabled());
+    ui->networkInterfaceLineEdit->setText(
+        QString::fromStdString(EmulatorSettings.GetNetworkInterfaceAddress()));
+    ui->broadcastPeersLineEdit->setText(
+        QString::fromStdString(EmulatorSettings.GetLoopbackBroadcastPeers()));
     ui->vblankSpinBox->setValue(EmulatorSettings.GetVblankFrequency());
     ui->dmemSpinBox->setValue(EmulatorSettings.GetExtraDmemInMBytes());
     ui->redZoneComboBox->setCurrentIndex(
@@ -840,7 +855,7 @@ void SettingsDialog::LoadValuesFromConfig() {
 
     QStringList tabNames = {tr("General"), tr("Frontend"), tr("Graphics"),
                             tr("User"),    tr("Input"),    tr("Paths"),
-                            tr("Log"),     tr("Debug"),    tr("Experimental")};
+                            tr("Log"),     tr("Debug"),    tr("Network")};
     int indexTab = tabNames.indexOf(translatedText);
     if (indexTab == -1 || !ui->tabWidgetSettings->isTabVisible(indexTab) || is_newly_created)
         indexTab = 0;
@@ -1081,7 +1096,20 @@ void SettingsDialog::updateNoteTextEdit(const QString& elementName) {
     } else if (elementName == "shaderCacheArchiveCheckBox") {
         text = tr("Compress the Shader Cache files into a zip file:\\nThe shader cache files are stored within a single zip file instead of multiple separate files.");
     } else if (elementName == "shadnetCheckBox") {
-        text = tr("shadNet:\\nCompatibility is very limited at the moment.\\nYou can register at https://www.shadps4.net/shadnet/register/.");
+        text = tr("Enable shadNet:\\nConnect games to a shadNet server instead of official PSN.\\nSet Server and WebAPI Server below. Create accounts in User Manager > ShadNet.");
+    } else if (elementName == "serverLineEdit" || elementName == "serverLabel" ||
+               elementName == "shadnetGroupBox") {
+        text = tr("shadNet Server:\\nHost:port for the game protocol. Example: srv.shadps4.net:31313\\nSame field in global Settings and per-game Settings.");
+    } else if (elementName == "servWebApiLineEdit" || elementName == "servWebApiLabel") {
+        text = tr("shadNet WebAPI Server:\\nHTTP base URL, including scheme and port. Example: http://srv.shadps4.net:31315");
+    } else if (elementName == "signalingInfoLineEdit" || elementName == "signalingInfoLabel") {
+        text = tr("Signaling Info:\\nOptional extra STUN/signaling data. Leave empty unless the server operator told you to set it.");
+    } else if (elementName == "upnpCheckBox") {
+        text = tr("Enable UPnP:\\nAsk the local router to forward ports for shadNet P2P. Turn off if UPnP causes issues.");
+    } else if (elementName == "networkInterfaceLineEdit") {
+        text = tr("Network Interface Address:\\nIPv4 address the game's sockets bind to. Leave empty to use every interface.\\nSeveral instances on one PC need one loopback address each (127.0.0.2, 127.0.0.3, ...).\\nFor LAN play enter this PC's LAN address.");
+    } else if (elementName == "broadcastPeersLineEdit") {
+        text = tr("Broadcast Peers:\\nComma-separated IPv4 addresses that also receive this instance's broadcast packets (LAN game discovery).\\nWith a loopback interface address list the other instances, e.g. 127.0.0.3,127.0.0.4.\\nWith a LAN interface address list peers in the same subnet.\\nRequires a Network Interface Address.");
     } else if (elementName == "readbacksGroupBox") {
         text = tr("Readbacks:\\nEnable GPU memory readbacks and writebacks.\\nThis is required for proper behavior in some games.\\nMight cause stability and/or performance issues.");
     } else if (elementName == "readbackLinearImagesCheckBox") {
@@ -1127,6 +1155,10 @@ void SettingsDialog::UpdateSettings(bool is_specific) {
     EmulatorSettings.SetShadNetWebApiServer(ui->servWebApiLineEdit->text().toStdString(),
                                             is_specific);
     EmulatorSettings.SetUPnPEnabled(ui->upnpCheckBox->isChecked(), is_specific);
+    EmulatorSettings.SetNetworkInterfaceAddress(
+        ui->networkInterfaceLineEdit->text().trimmed().toStdString(), is_specific);
+    EmulatorSettings.SetLoopbackBroadcastPeers(
+        ui->broadcastPeersLineEdit->text().trimmed().toStdString(), is_specific);
     EmulatorSettings.SetVblankFrequency(ui->vblankSpinBox->value(), is_specific);
     EmulatorSettings.SetExtraDmemInMBytes(ui->dmemSpinBox->value(), is_specific);
     EmulatorSettings.SetWindowsGuestRedZoneProtectionMode(
@@ -1308,6 +1340,85 @@ void SettingsDialog::SetDefaultValues() {
         m_gui_settings->SetValue(gui::gen_checkCompatibilityAtStartup, false);
         m_gui_settings->SetValue(gui::gen_homeTab, "General");
     }
+}
+
+namespace {
+
+// Same grammar as Common::Network::ParseIpv4 in the emulator: four decimal octets 0-255.
+std::optional<u32> ParseIpv4(std::string_view text) {
+    u32 address{};
+    for (int octet = 0; octet < 4; ++octet) {
+        const auto dot = text.find('.');
+        const auto part = text.substr(0, dot);
+        unsigned int value{};
+        const auto [end, error] = std::from_chars(part.data(), part.data() + part.size(), value);
+        if (part.empty() || error != std::errc{} || end != part.data() + part.size() ||
+            value > 255 || ((octet == 3) != (dot == std::string_view::npos))) {
+            return std::nullopt;
+        }
+        address = (address << 8) | value;
+        if (octet != 3) {
+            text.remove_prefix(dot + 1);
+        }
+    }
+    return address;
+}
+
+bool IsLoopbackIpv4(u32 address) {
+    return (address >> 24) == 127;
+}
+
+// The emulator rejects peer lists longer than this.
+constexpr qsizetype MaxBroadcastPeers = 64;
+
+} // namespace
+
+bool SettingsDialog::ValidateNetworkSettings() {
+    const QString address_text = ui->networkInterfaceLineEdit->text().trimmed();
+    const QString peers_text = ui->broadcastPeersLineEdit->text().trimmed();
+    const auto fail = [this](const QString& message) {
+        QMessageBox::warning(this, tr("Invalid network settings"), message);
+        return false;
+    };
+
+    std::optional<u32> address;
+    if (!address_text.isEmpty()) {
+        address = ParseIpv4(address_text.toStdString());
+        if (!address) {
+            return fail(tr("Network Interface Address \"%1\" is not a valid IPv4 address.")
+                            .arg(address_text));
+        }
+    }
+    if (peers_text.isEmpty()) {
+        return true;
+    }
+    if (!address) {
+        return fail(tr("Broadcast Peers require a Network Interface Address."));
+    }
+
+    const QStringList peers = peers_text.split(QLatin1Char(','));
+    if (peers.size() > MaxBroadcastPeers) {
+        return fail(tr("Broadcast Peers accept at most %1 addresses.").arg(MaxBroadcastPeers));
+    }
+    const bool loopback_interface = IsLoopbackIpv4(*address);
+    for (const QString& peer : peers) {
+        const auto peer_address = ParseIpv4(peer.toStdString());
+        if (!peer_address) {
+            return fail(tr("Broadcast peer \"%1\" is not a valid IPv4 address.").arg(peer));
+        }
+        if (loopback_interface && !IsLoopbackIpv4(*peer_address)) {
+            return fail(tr("Broadcast peer %1 must be a loopback address (127.x.x.x) because the "
+                           "Network Interface Address is a loopback address.")
+                            .arg(peer));
+        }
+        if (!loopback_interface &&
+            (IsLoopbackIpv4(*peer_address) || (*peer_address >> 24) >= 224)) {
+            return fail(tr("Broadcast peer %1 must be a unicast address in the same LAN as the "
+                           "Network Interface Address.")
+                            .arg(peer));
+        }
+    }
+    return true;
 }
 
 void SettingsDialog::SaveSettings() {

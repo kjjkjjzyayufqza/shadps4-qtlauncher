@@ -200,12 +200,15 @@ struct GeneralSettings {
     Setting<bool> neo_mode{false};
     Setting<bool> dev_kit_mode{false};
     Setting<int> extra_dmem_in_mbytes{0};
+    Setting<int> extra_fmem_in_mbytes{0};
     Setting<bool> shad_net_enabled{false};
     Setting<bool> trophy_popup_disabled{false};
     Setting<double> trophy_notification_duration{6.0};
     Setting<std::string> trophy_notification_side{"right"};
     Setting<bool> show_splash{false};
     Setting<bool> connected_to_network{false};
+    Setting<std::string> network_interface_address{};
+    Setting<std::string> loopback_broadcast_peers{};
     Setting<bool> discord_rpc_enabled{false};
     Setting<bool> show_fps_counter{false};
     Setting<int> console_language{1};
@@ -223,6 +226,8 @@ struct GeneralSettings {
             make_override<GeneralSettings>("dev_kit_mode", &GeneralSettings::dev_kit_mode),
             make_override<GeneralSettings>("extra_dmem_in_mbytes",
                                            &GeneralSettings::extra_dmem_in_mbytes),
+            make_override<GeneralSettings>("extra_fmem_in_mbytes",
+                                           &GeneralSettings::extra_fmem_in_mbytes),
             make_override<GeneralSettings>("shad_net_enabled", &GeneralSettings::shad_net_enabled),
             make_override<GeneralSettings>("trophy_popup_disabled",
                                            &GeneralSettings::trophy_popup_disabled),
@@ -233,6 +238,10 @@ struct GeneralSettings {
                                            &GeneralSettings::trophy_notification_side),
             make_override<GeneralSettings>("connected_to_network",
                                            &GeneralSettings::connected_to_network),
+            make_override<GeneralSettings>("network_interface_address",
+                                           &GeneralSettings::network_interface_address),
+            make_override<GeneralSettings>("loopback_broadcast_peers",
+                                           &GeneralSettings::loopback_broadcast_peers),
             make_override<GeneralSettings>("console_language", &GeneralSettings::console_language),
             make_override<GeneralSettings>("shadnet_server", &GeneralSettings::shadnet_server),
             make_override<GeneralSettings>("shadnet_webapi_server",
@@ -244,9 +253,10 @@ struct GeneralSettings {
 
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(GeneralSettings, install_dirs, addon_install_dir, home_dir,
                                    sys_modules_dir, font_dir, volume_slider, neo_mode, dev_kit_mode,
-                                   extra_dmem_in_mbytes, shad_net_enabled, trophy_popup_disabled,
-                                   trophy_notification_duration, show_splash,
+                                   extra_dmem_in_mbytes, extra_fmem_in_mbytes, shad_net_enabled,
+                                   trophy_popup_disabled, trophy_notification_duration, show_splash,
                                    trophy_notification_side, connected_to_network,
+                                   network_interface_address, loopback_broadcast_peers,
                                    discord_rpc_enabled, show_fps_counter, console_language,
                                    big_picture_scale, shadnet_server, shadnet_webapi_server,
                                    signaling_info, enable_upnp)
@@ -656,6 +666,7 @@ public:
     SETTING_FORWARD_BOOL(m_general, Neo, neo_mode)
     SETTING_FORWARD_BOOL(m_general, DevKit, dev_kit_mode)
     SETTING_FORWARD(m_general, ExtraDmemInMBytes, extra_dmem_in_mbytes)
+    SETTING_FORWARD(m_general, ExtraFmemInMBytes, extra_fmem_in_mbytes)
     bool IsShadNetEnabled() const {
         return m_general.shad_net_enabled.get(m_configMode) &&
                !m_shadnet_session_disabled.load(std::memory_order_relaxed);
@@ -677,6 +688,8 @@ public:
     SETTING_FORWARD(m_general, TrophyNotificationSide, trophy_notification_side)
     SETTING_FORWARD_BOOL(m_general, ShowSplash, show_splash)
     SETTING_FORWARD_BOOL(m_general, ConnectedToNetwork, connected_to_network)
+    SETTING_FORWARD(m_general, NetworkInterfaceAddress, network_interface_address)
+    SETTING_FORWARD(m_general, LoopbackBroadcastPeers, loopback_broadcast_peers)
     SETTING_FORWARD_BOOL(m_general, DiscordRPCEnabled, discord_rpc_enabled)
     SETTING_FORWARD_BOOL(m_general, ShowFpsCounter, show_fps_counter)
     SETTING_FORWARD(m_general, ConsoleLanguage, console_language)

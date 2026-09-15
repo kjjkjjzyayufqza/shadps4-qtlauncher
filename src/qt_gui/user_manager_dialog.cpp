@@ -1,11 +1,16 @@
 ﻿// SPDX-FileCopyrightText: Copyright 2025-2026 shadLauncher4 Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include <QApplication>
+#include <QFutureWatcher>
 #include <QHeaderView>
+#include <QPointer>
+#include <QtConcurrent>
 #include <QtWidgets>
 #include <common/path_util.h>
 #include <core/user_settings.h>
 #include "core/emulator_settings.h"
+#include "core/shadnet_register.h"
 #include "gui_settings.h"
 #include "table_item_delegate.h"
 #include "user_manager_dialog.h"
@@ -358,13 +363,22 @@ void UserManagerDialog::OnUserEditShadNet() {
 
     QDialog dialog(this);
     dialog.setWindowTitle(tr("ShadNet Settings - %1").arg(QString::fromStdString(user->user_name)));
-    dialog.setMinimumWidth(360);
+    dialog.setMinimumWidth(420);
 
     auto* enabled = new QCheckBox(tr("Enable ShadNet for this user"), &dialog);
     enabled->setChecked(user->shadnet_enabled);
 
+    const auto server = ShadNetRegister::ParseServer(
+        QString::fromStdString(EmulatorSettings.GetShadNetServer()));
+    auto* server_label = new QLabel(
+        tr("Server: %1:%2").arg(server.host.isEmpty() ? tr("(not set)") : server.host).arg(server.port),
+        &dialog);
+    server_label->setWordWrap(true);
+    server_label->setTextInteractionFlags(Qt::TextSelectableByMouse);
+
     auto* npid = new QLineEdit(QString::fromStdString(user->shadnet_npid), &dialog);
     npid->setPlaceholderText(tr("Account ID (NPID)"));
+    npid->setMaxLength(16);
 
     auto* password = new QLineEdit(QString::fromStdString(user->shadnet_password), &dialog);
     password->setPlaceholderText(tr("Password"));
@@ -375,42 +389,137 @@ void UserManagerDialog::OnUserEditShadNet() {
         password->setEchoMode(on ? QLineEdit::Normal : QLineEdit::Password);
     });
 
-    // NPID/password only make sense when ShadNet is enabled.
+    auto* email = new QLineEdit(QString::fromStdString(user->shadnet_email), &dialog);
+    email->setPlaceholderText(tr("email@example.com"));
+
+    auto* secret = new QLineEdit(&dialog);
+    secret->setPlaceholderText(tr("Leave empty unless the server requires one"));
+    secret->setEchoMode(QLineEdit::Password);
+
+    auto* country = new QLineEdit(QString::fromStdString(user->np_country), &dialog);
+    country->setPlaceholderText(tr("Two-letter code, e.g. us"));
+    country->setMaxLength(2);
+    country->setValidator(
+        new QRegularExpressionValidator(QRegularExpression(QStringLiteral("[a-z]{2}")), country));
+
     auto* form_host = new QWidget(&dialog);
     auto* form = new QFormLayout(form_host);
     form->setContentsMargins(0, 0, 0, 0);
     form->addRow(tr("Account ID (NPID):"), npid);
     form->addRow(tr("Password:"), password);
     form->addRow(QString(), show_pw);
+    form->addRow(tr("Email:"), email);
+    form->addRow(tr("Registration key:"), secret);
+    form->addRow(tr("Country:"), country);
 
-    auto sync_enabled = [form_host](bool on) { form_host->setEnabled(on); };
-    sync_enabled(enabled->isChecked());
-    connect(enabled, &QCheckBox::toggled, form_host, sync_enabled);
+    auto* hint = new QLabel(
+        tr("Create Account registers this NPID on the server above. Save stores the login "
+           "for this launcher user. Set the server in Settings > Network first."),
+        &dialog);
+    hint->setWordWrap(true);
 
     auto* buttons =
         new QDialogButtonBox(QDialogButtonBox::Save | QDialogButtonBox::Cancel, &dialog);
-    connect(buttons, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
+    auto* create_btn = buttons->addButton(tr("Create Account"), QDialogButtonBox::ActionRole);
+
+    const auto save_fields = [user_id, enabled, npid, password, email, country]() -> bool {
+        if (!country->hasAcceptableInput()) {
+            return false;
+        }
+        User* current = UserManagement.GetUserByID(user_id);
+        if (!current) {
+            return false;
+        }
+        current->shadnet_enabled = enabled->isChecked();
+        current->shadnet_npid = npid->text().trimmed().toStdString();
+        current->shadnet_password = password->text().toStdString();
+        current->shadnet_email = email->text().trimmed().toStdString();
+        current->np_country = country->text().toStdString();
+        UserManagement.Save();
+        return true;
+    };
+
+    connect(create_btn, &QPushButton::clicked, &dialog, [=, this, &dialog] {
+        if (!country->hasAcceptableInput()) {
+            QMessageBox::warning(&dialog, tr("Invalid country"),
+                                 tr("Country must be a two-letter lowercase code such as us."));
+            return;
+        }
+        if (server.host.trimmed().isEmpty()) {
+            QMessageBox::warning(&dialog, tr("No shadNet server"),
+                                 tr("Set Server in Settings > Network, save, then try again."));
+            return;
+        }
+
+        create_btn->setEnabled(false);
+        form_host->setEnabled(false);
+        if (auto* save_btn = buttons->button(QDialogButtonBox::Save)) {
+            save_btn->setEnabled(false);
+        }
+
+        const QString host = server.host;
+        const quint16 port = server.port;
+        const QString npid_text = npid->text().trimmed();
+        const QString password_text = password->text();
+        const QString email_text = email->text().trimmed();
+        const QString secret_text = secret->text();
+
+        auto* watcher = new QFutureWatcher<std::pair<bool, QString>>(&dialog);
+        QPointer<QDialog> live(&dialog);
+        connect(watcher, &QFutureWatcher<std::pair<bool, QString>>::finished, &dialog,
+                [=, this, &dialog] {
+                    create_btn->setEnabled(true);
+                    form_host->setEnabled(true);
+                    if (auto* save_btn = buttons->button(QDialogButtonBox::Save)) {
+                        save_btn->setEnabled(true);
+                    }
+                    if (!live) {
+                        return;
+                    }
+                    const auto result = watcher->result();
+                    if (!result.first) {
+                        QMessageBox::warning(&dialog, tr("Create Account"), result.second);
+                        return;
+                    }
+                    enabled->setChecked(true);
+                    if (!EmulatorSettings.IsShadNetEnabledSetting()) {
+                        EmulatorSettings.SetShadNetEnabled(true);
+                        EmulatorSettings.SetConnectedToNetwork(true);
+                        EmulatorSettings.Save();
+                    }
+                    save_fields();
+                    UpdateTable();
+                    QMessageBox::information(&dialog, tr("Create Account"), result.second);
+                });
+        watcher->setFuture(QtConcurrent::run([host, port, npid_text, password_text, email_text,
+                                              secret_text] {
+            return ShadNetRegister::CreateAccount(host, port, npid_text, password_text, email_text,
+                                                  secret_text);
+        }));
+    });
+
+    connect(buttons, &QDialogButtonBox::accepted, &dialog, [&dialog, country] {
+        if (!country->hasAcceptableInput()) {
+            QMessageBox::warning(&dialog, tr("Invalid country"),
+                                 tr("Country must be a two-letter lowercase code such as us."));
+            return;
+        }
+        dialog.accept();
+    });
     connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
 
     auto* layout = new QVBoxLayout(&dialog);
     layout->addWidget(enabled);
+    layout->addWidget(server_label);
     layout->addWidget(form_host);
+    layout->addWidget(hint);
     layout->addStretch();
     layout->addWidget(buttons);
 
     if (dialog.exec() != QDialog::Accepted) {
         return;
     }
-
-    // Re-fetch in case the list changed while the modal was open.
-    user = UserManagement.GetUserByID(user_id);
-    if (!user) {
-        return;
-    }
-    user->shadnet_enabled = enabled->isChecked();
-    user->shadnet_npid = npid->text().trimmed().toStdString();
-    user->shadnet_password = password->text().toStdString();
-    UserManagement.Save();
+    save_fields();
     UpdateTable();
 }
 

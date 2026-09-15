@@ -278,6 +278,8 @@ set(CORE src/core/file_format/elf.cpp
          src/core/user_manager.h
          src/core/user_settings.cpp
          src/core/user_settings.h
+         src/core/shadnet_register.cpp
+         src/core/shadnet_register.h
 )
 
 set(INPUT src/input/input.cpp

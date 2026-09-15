@@ -42,6 +42,7 @@ signals:
 private:
     void LoadValuesFromConfig();
     void UpdateSettings(bool is_specific = false);
+    bool ValidateNetworkSettings();
     void SyncRealTimeWidgetstoConfig();
     void InitializeEmulatorLanguages();
     void OnLanguageChanged(int index);
