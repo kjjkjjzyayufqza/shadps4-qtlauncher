@@ -3,11 +3,13 @@
 
 name: Build and Release
 
-on: 
+on:
   push:
     branches-ignore: [shadPS4QtLauncher-*]
 
   pull_request:
+
+  workflow_dispatch:
 
 
 concurrency:
