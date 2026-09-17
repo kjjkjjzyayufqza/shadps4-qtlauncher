@@ -3,8 +3,9 @@
 
 #pragma once
 
-#include <QString>
 #include <utility>
+
+#include <QString>
 
 namespace ShadNetRegister {
 

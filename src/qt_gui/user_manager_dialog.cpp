@@ -368,11 +368,12 @@ void UserManagerDialog::OnUserEditShadNet() {
     auto* enabled = new QCheckBox(tr("Enable ShadNet for this user"), &dialog);
     enabled->setChecked(user->shadnet_enabled);
 
-    const auto server = ShadNetRegister::ParseServer(
-        QString::fromStdString(EmulatorSettings.GetShadNetServer()));
-    auto* server_label = new QLabel(
-        tr("Server: %1:%2").arg(server.host.isEmpty() ? tr("(not set)") : server.host).arg(server.port),
-        &dialog);
+    const auto server =
+        ShadNetRegister::ParseServer(QString::fromStdString(EmulatorSettings.GetShadNetServer()));
+    auto* server_label = new QLabel(tr("Server: %1:%2")
+                                        .arg(server.host.isEmpty() ? tr("(not set)") : server.host)
+                                        .arg(server.port),
+                                    &dialog);
     server_label->setWordWrap(true);
     server_label->setTextInteractionFlags(Qt::TextSelectableByMouse);
 
@@ -491,11 +492,11 @@ void UserManagerDialog::OnUserEditShadNet() {
                     UpdateTable();
                     QMessageBox::information(&dialog, tr("Create Account"), result.second);
                 });
-        watcher->setFuture(QtConcurrent::run([host, port, npid_text, password_text, email_text,
-                                              secret_text] {
-            return ShadNetRegister::CreateAccount(host, port, npid_text, password_text, email_text,
-                                                  secret_text);
-        }));
+        watcher->setFuture(
+            QtConcurrent::run([host, port, npid_text, password_text, email_text, secret_text] {
+                return ShadNetRegister::CreateAccount(host, port, npid_text, password_text,
+                                                      email_text, secret_text);
+            }));
     });
 
     connect(buttons, &QDialogButtonBox::accepted, &dialog, [&dialog, country] {

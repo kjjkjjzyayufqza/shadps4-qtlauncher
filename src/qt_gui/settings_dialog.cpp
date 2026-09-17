@@ -175,15 +175,10 @@ SettingsDialog::SettingsDialog(std::shared_ptr<gui_settings> gui_settings,
     presentModeMap = {{tr("Mailbox (Vsync)"), "Mailbox"},
                       {tr("Fifo (Vsync)"), "Fifo"},
                       {tr("Immediate (No Vsync)"), "Immediate"}};
-    chooseHomeTabMap = {{tr("General"), "General"},
-                        {tr("Frontend"), "Frontend"},
-                        {tr("Graphics"), "Graphics"},
-                        {tr("User"), "User"},
-                        {tr("Input"), "Input"},
-                        {tr("Paths"), "Paths"},
-                        {tr("Log"), "Log"},
-                        {tr("Debug"), "Debug"},
-                        {tr("Network"), "Experimental"}};
+    chooseHomeTabMap = {
+        {tr("General"), "General"}, {tr("Frontend"), "Frontend"}, {tr("Graphics"), "Graphics"},
+        {tr("User"), "User"},       {tr("Input"), "Input"},       {tr("Paths"), "Paths"},
+        {tr("Log"), "Log"},         {tr("Debug"), "Debug"},       {tr("Network"), "Experimental"}};
     micMap = {{tr("None"), "None"}, {tr("Default Device"), "Default Device"}};
     audioBackendMap = {{0, "SDL"}, {1, "OpenAL"}};
 
