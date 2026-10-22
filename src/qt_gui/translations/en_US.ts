@@ -1025,6 +1025,10 @@ Please enter your keys and save them.</source>
         <source>TB</source>
         <translation>TB</translation>
     </message>
+    <message>
+        <source>Total: %1</source>
+        <translation type="unfinished"></translation>
+    </message>
 </context>
 <context>
     <name>GuiContextMenus</name>
@@ -2125,6 +2129,16 @@ Select an emulator version from the right panel.</source>
         <source>bootable files (*.bin *.elf *.oelf *.zar)</source>
         <translation type="unfinished"></translation>
     </message>
+    <message>
+        <source>Error</source>
+        <translation type="unfinished">Error</translation>
+    </message>
+    <message>
+        <source>Rosetta 2 is not installed.
+
+Please install Rosetta 2 from Terminal using &apos;softwareupdate --install-rosetta&apos;.</source>
+        <translation type="unfinished"></translation>
+    </message>
 </context>
 <context>
     <name>QObject</name>
@@ -2294,10 +2308,6 @@ Select an emulator version from the right panel.</source>
     <message>
         <source>Collect Shaders</source>
         <translation>Collect Shaders</translation>
-    </message>
-    <message>
-        <source>Copy GPU Buffers</source>
-        <translation>Copy GPU Buffers</translation>
     </message>
     <message>
         <source>Host Debug Markers</source>
@@ -2724,10 +2734,6 @@ Select an emulator version from the right panel.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>Set &quot;Network Connected&quot; to True</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
         <source>Miscellaneous</source>
         <translation type="unfinished"></translation>
     </message>
@@ -3036,10 +3042,6 @@ Select an emulator version from the right panel.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>ShadNet</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
         <source>Server</source>
         <translation type="unfinished"></translation>
     </message>
@@ -3060,11 +3062,35 @@ Select an emulator version from the right panel.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>Red Zone Protection</source>
+        <source>Red Zone CPU Patches</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>Static Patching</source>
+        <source>Enable Red Zone CPU Patches</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Network</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Network Settings</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Set Network Connected Status as True</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Disable HTTPS</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>P2P Port</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Copy GPU Command Buffers</source>
         <translation type="unfinished"></translation>
     </message>
 </context>

@@ -1,6 +1,7 @@
-// SPDX-FileCopyrightText: Copyright 2025 shadPS4 Emulator Project
+// SPDX-FileCopyrightText: Copyright 2025-2026 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include <QComboBox>
 #include <QDockWidget>
 #include <QKeyEvent>
 #include <QPlainTextEdit>
@@ -31,6 +32,7 @@
 #include "main_window.h"
 #include "settings_dialog.h"
 #include "skylander_dialog.h"
+#include "trophy_viewer.h"
 #include "user_manager_dialog.h"
 
 MainWindow::MainWindow(QWidget* parent, bool log_to_terminal)
@@ -56,6 +58,17 @@ bool MainWindow::Init() {
     auto start = std::chrono::steady_clock::now();
     // setup ui
     LoadTranslation();
+
+#ifdef __APPLE__
+    // Check for Rosetta 2, as it is required to run the emulator core.
+    if (!std::filesystem::exists("/Library/Apple/usr/libexec/oah/libRosettaRuntime")) {
+        QMessageBox::critical(nullptr, tr("Error"),
+                              tr("Rosetta 2 is not installed.\n\nPlease install Rosetta 2 from "
+                                 "Terminal using 'softwareupdate --install-rosetta'."));
+        exit(1);
+    }
+#endif
+
     AddUiWidgets();
     CreateActions();
     CreateRecentGameActions();
@@ -265,6 +278,7 @@ void MainWindow::AddUiWidgets() {
     searchSliderLayout->setContentsMargins(0, 0, 6, 6);
     searchSliderLayout->setSpacing(2);
     ui->mw_searchbar->setFixedWidth(150);
+    ui->mw_searchbar->setClearButtonEnabled(true);
 
     searchSliderLayout->addWidget(ui->sizeSliderContainer);
     searchSliderLayout->addWidget(ui->mw_searchbar);
@@ -374,7 +388,7 @@ void MainWindow::CreateDockWindows(bool newDock) {
         ui->sizeSlider->setSliderPosition(slider_pos); // set slider pos at start;
         isTableList = true;
         connect(m_game_list_frame.data(), &GameListFrame::RequestRefreshList, this,
-                &MainWindow::RefreshGameTable);
+                &MainWindow::RefreshGameTableForSerial);
     } else if (table_mode == 1) { // Grid
         m_game_list_frame->hide();
         m_elf_viewer->hide();
@@ -390,7 +404,7 @@ void MainWindow::CreateDockWindows(bool newDock) {
         ui->sizeSlider->setSliderPosition(slider_pos); // set slider pos at start;
         isTableList = false;
         connect(m_game_grid_frame.data(), &GameGridFrame::RequestRefreshGrid, this,
-                &MainWindow::RefreshGameTable);
+                &MainWindow::RefreshGameTableForSerial);
     } else {
         m_game_list_frame->hide();
         m_game_grid_frame->hide();
@@ -464,8 +478,8 @@ void MainWindow::CreateConnects() {
     connect(this, &MainWindow::WindowResized, this, &MainWindow::HandleResize);
     connect(ui->mw_searchbar, &QLineEdit::textChanged, this, &MainWindow::SearchGameTable);
     connect(ui->exitAct, &QAction::triggered, this, &QWidget::close);
-    connect(ui->refreshGameListAct, &QAction::triggered, this, &MainWindow::RefreshGameTable);
-    connect(ui->refreshButton, &QPushButton::clicked, this, &MainWindow::RefreshGameTable);
+    connect(ui->refreshGameListAct, &QAction::triggered, this, &MainWindow::ForceRefreshGameTable);
+    connect(ui->refreshButton, &QPushButton::clicked, this, &MainWindow::ForceRefreshGameTable);
     connect(ui->showGameListAct, &QAction::triggered, this, &MainWindow::ShowGameList);
     connect(ui->toggleLabelsAct, &QAction::toggled, this, &MainWindow::toggleLabelsUnderIcons);
     connect(ui->fullscreenButton, &QPushButton::clicked, this, &MainWindow::toggleFullscreen);
@@ -805,6 +819,31 @@ void MainWindow::CreateConnects() {
         panelDialog->exec();
     });
 
+    // Update files.json (Patches)
+    connect(ui->updateFilesJsonAct, &QAction::triggered, this, [this]() {
+        QDir patchesDir(Common::FS::GetUserPath(Common::FS::PathType::PatchesDir));
+
+        if (!patchesDir.exists()) {
+            QMessageBox::warning(this, tr("Error"), tr("Patches directory does not exist."));
+            return;
+        }
+        const QString empty;
+        CheatsPatches cheatsPatches(m_gui_settings, m_ipc_client, empty, empty, empty, empty, empty,
+                                    nullptr);
+        const QStringList folders = patchesDir.entryList(QDir::Dirs | QDir::NoDotAndDotDot);
+        int processed = 0;
+        for (const QString& folder : folders) {
+            QDir subDir(patchesDir.filePath(folder));
+            const QStringList xmlFiles = subDir.entryList(QStringList() << "*.xml", QDir::Files);
+            if (xmlFiles.isEmpty())
+                continue;
+            cheatsPatches.createFilesJson(folder);
+            ++processed;
+        }
+        QMessageBox::information(this, tr("Update files.json"),
+                                 tr("Processing complete.\nFolders processed: %1").arg(processed));
+    });
+
     // Dump game list.
     connect(ui->dumpGameListAct, &QAction::triggered, this, [&] {
         QString filePath = qApp->applicationDirPath().append("/GameList.txt");
@@ -1014,7 +1053,7 @@ void MainWindow::StartGameWithArgs(QStringList args) {
         }
     }
     if (gamePath != "") {
-        if (Core ::FileSys::IsZArchiveFile(m_game_info->m_games[itemID].path)) {
+        if (Core::FileSys::IsZArchiveFile(m_game_info->m_games[itemID].path)) {
             gamePath.chop(10);
         }
 
@@ -1040,31 +1079,25 @@ void MainWindow::StartGame() {
 }
 
 void MainWindow::SearchGameTable(const QString& text) {
+    const auto& games = m_game_info->m_games_backup;
+
+    QVector<GameInfo> filteredGames;
+    filteredGames.reserve(games.size());
+
+    for (const auto& gameInfo : games) {
+        const QString gameName = QString::fromStdString(gameInfo.name);
+
+        if (gameName.contains(text, Qt::CaseInsensitive)) {
+            filteredGames.push_back(gameInfo);
+        }
+    }
+
+    m_game_info->m_games = std::move(filteredGames);
+
     if (isTableList) {
-        const int rowCount = m_game_list_frame->rowCount();
-
-        for (int row = 0; row < rowCount; ++row) {
-            const auto& game = m_game_info->m_games[row];
-            const bool match =
-                QString::fromStdString(game.name).contains(text, Qt::CaseInsensitive);
-
-            m_game_list_frame->setRowHidden(row, !match);
-        }
+        m_game_list_frame->clearContents();
+        m_game_list_frame->PopulateGameList(false);
     } else {
-        const auto& games = m_game_info->m_games_backup;
-
-        QVector<GameInfo> filteredGames;
-        filteredGames.reserve(games.size());
-
-        for (const auto& gameInfo : games) {
-            const QString gameName = QString::fromStdString(gameInfo.name);
-
-            if (gameName.contains(text, Qt::CaseInsensitive)) {
-                filteredGames.push_back(gameInfo);
-            }
-        }
-
-        m_game_info->m_games = std::move(filteredGames);
         m_game_grid_frame->PopulateGameGrid(m_game_info->m_games, true);
     }
 }
@@ -1079,10 +1112,22 @@ void MainWindow::ShowGameList() {
 };
 
 void MainWindow::RefreshGameTable() {
+    ReloadGameTable(false);
+}
+
+void MainWindow::ForceRefreshGameTable() {
+    ReloadGameTable(true);
+}
+
+void MainWindow::RefreshGameTableForSerial(const QString& serial) {
+    ReloadGameTable(false, serial);
+}
+
+void MainWindow::ReloadGameTable(bool force_size_refresh, const QString& force_size_serial) {
     // m_game_info->m_games.clear();
-    m_game_info->GetGameInfo(this);
+    m_game_info->GetGameInfo(this, force_size_refresh, force_size_serial.toStdString());
     m_game_list_frame->clearContents();
-    m_game_list_frame->PopulateGameList();
+    m_game_list_frame->PopulateGameList(false);
     m_game_grid_frame->clearContents();
     m_game_grid_frame->PopulateGameGrid(m_game_info->m_games, false);
     statusBar->clearMessage();
@@ -1090,6 +1135,7 @@ void MainWindow::RefreshGameTable() {
     QString statusMessage = tr("Games: ") + QString::number(numGames);
     statusBar->showMessage(statusMessage);
     m_game_list_frame->ToggleColumnVisibility();
+    SearchGameTable(ui->mw_searchbar->text());
 }
 
 void MainWindow::ConfigureGuiFromSettings() {
@@ -1251,6 +1297,7 @@ void MainWindow::SetUiIcons(bool isWhite) {
 #endif
     ui->downloadCheatsPatchesAct->setIcon(
         RecolorIcon(ui->downloadCheatsPatchesAct->icon(), isWhite));
+    ui->updateFilesJsonAct->setIcon(RecolorIcon(ui->updateFilesJsonAct->icon(), isWhite));
     ui->dumpGameListAct->setIcon(RecolorIcon(ui->dumpGameListAct->icon(), isWhite));
     ui->aboutAct->setIcon(RecolorIcon(ui->aboutAct->icon(), isWhite));
     ui->setlistModeListAct->setIcon(RecolorIcon(ui->setlistModeListAct->icon(), isWhite));
@@ -1523,7 +1570,10 @@ void MainWindow::StartEmulatorExecutable(std::filesystem::path emuPath, QString 
 
 void MainWindow::RunGame() {
     auto gameInfo = GameInfoClass();
-    auto dir = last_game_path.parent_path();
+    auto dir = last_game_path;
+    if (dir.stem() == "eboot") {
+        dir = dir.parent_path();
+    }
     auto info = gameInfo.readGameInfo(dir);
     auto appVersion = info.version;
     auto gameSerial = info.serial;
